@@ -271,6 +271,42 @@ paths:
         "200": { $ref: "#/components/responses/SendOK" }
         "503": { description: Conta não pareada }
 
+  /api/sessions/{sid}/presence:
+    post:
+      tags: [Mensagens]
+      summary: Envia estado de digitação/presença em um chat
+      description: |
+        Útil para simular `digitando...` no WhatsApp. Tipos suportados:
+        `composing` e `paused`. Para `composing`, o campo `media` pode ser
+        `audio` para indicar gravação/áudio em vez de texto.
+      parameters:
+        - { $ref: "#/components/parameters/Sid" }
+        - { $ref: "#/components/parameters/ClientId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, type]
+              properties:
+                to: { type: string, example: "5561999999999", description: "Número (DDI+DDD) ou JID completo (...@s.whatsapp.net / ...@g.us)" }
+                type: { type: string, enum: [composing, paused] }
+                media: { type: string, enum: ["", audio], description: "Opcional; só usado com composing" }
+      responses:
+        "200":
+          description: Presença enviada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  to: { type: string }
+                  type: { type: string }
+        "400": { description: Payload inválido }
+        "503": { description: Conta não pareada }
+
   /api/sessions/{sid}/messages/image:
     post:
       tags: [Mensagens]

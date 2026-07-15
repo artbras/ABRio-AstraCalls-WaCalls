@@ -44,3 +44,4 @@ Thumbs.db
 /wacalls-mlow
 /wacalls-orig
 /Caddyfile
+deploy/swarm/.env

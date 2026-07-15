@@ -302,8 +302,37 @@ func (s *server) handleChatwootWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
 		return
 	}
+	event := asStr(body["event"])
+	if event == "conversation.typing_on" || event == "conversation.typing_off" {
+		chatID := chatIDFromWebhook(body)
+		if chatID == "" {
+			s.log.Warn("chatwoot typing skipped: unresolved recipient", "event", event)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		jid, err := resolveRecipient(chatID)
+		if err != nil {
+			s.log.Warn("chatwoot typing skipped: invalid recipient", "event", event, "recipient", chatID, "err", err)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if event == "conversation.typing_on" {
+			if err := sess.sendComposing(ctx, jid); err != nil {
+				s.log.Warn("chatwoot typing_on failed", "jid", jid.String(), "err", err)
+			}
+		} else {
+			if err := sess.sendPaused(ctx, jid); err != nil {
+				s.log.Warn("chatwoot typing_off failed", "jid", jid.String(), "err", err)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
 	// só processa mensagens de saída do agente
-	if asStr(body["event"]) != "message_created" || asStr(body["message_type"]) != "outgoing" {
+	if event != "message_created" || asStr(body["message_type"]) != "outgoing" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -495,6 +524,19 @@ func chatIDFromWebhook(body map[string]any) string {
 		if v := asStr(ca[cwChatIDAttr]); v != "" {
 			return v
 		}
+	}
+	if sender2 := asMap(body["sender"]); sender2 != nil {
+		if ca := asMap(sender2["custom_attributes"]); ca != nil {
+			if v := asStr(ca[cwChatIDAttr]); v != "" {
+				return v
+			}
+		}
+		if id := asStr(sender2["identifier"]); id != "" {
+			return id
+		}
+	}
+	if sourceID := asStr(asMap(asMap(body["conversation"])["contact_inbox"])["source_id"]); sourceID != "" {
+		return sourceID
 	}
 	if ph := asStr(sender["phone_number"]); ph != "" {
 		return strings.TrimPrefix(ph, "+")

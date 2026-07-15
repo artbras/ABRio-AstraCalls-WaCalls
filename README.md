@@ -72,6 +72,10 @@ Além de chamadas, a API agora **envia mensagens** via whatsmeow:
 `POST /api/sessions/{sid}/messages/{text|image|audio|video|document}` (mídia por base64 ou
 URL).
 
+Também expõe `POST /api/sessions/{sid}/presence` para enviar estados transitórios
+de presença no chat (`composing` / `paused`), permitindo implementar `digitando...`
+no WhatsApp e integrar isso ao Chatwoot.
+
 ### 🔔 Webhooks por sessão
 `GET/POST/DELETE /api/sessions/{sid}/webhook` — dispara eventos `message` e `receipt`
 recebidos para a URL configurada, permitindo integrar com qualquer backend.
@@ -79,7 +83,8 @@ recebidos para a URL configurada, permitindo integrar com qualquer backend.
 ### 🤝 Integração nativa com Chatwoot
 Módulo `chatwoot.go` (inspirado no app de Chatwoot do WAHA): contato e conversa
 find/create por telefone, mensagens **WhatsApp → Chatwoot** (texto + mídia) e
-**Chatwoot → WhatsApp** via webhook (`message_created/outgoing`). Tudo com **1 QR só** por
+**Chatwoot → WhatsApp** via webhook (`message_created/outgoing`) e suporte a
+`conversation.typing_on/off` para propagar `digitando...`. Tudo com **1 QR só** por
 número — a mesma sessão serve chamadas, mensagens e Chatwoot.
 
 ### 📲 Widget de chamada dentro do Chatwoot
@@ -221,25 +226,24 @@ npm run dev      # Vite na :5173, faz proxy de /api → http://localhost:8080
 ## 🐳 Deploy em produção (Docker Swarm + Traefik)
 
 ```bash
-# imagem oficial publicada no Docker Hub:
-#   astraonline/wacalls:develop
-# para usar direto, basta referenciá-la na stack (PullImage).
+# 1) copie e edite as variáveis de deploy
+cp deploy/swarm/.env.example deploy/swarm/.env
 
-# para buildar a sua própria a partir do código:
-docker build -t astraonline/wacalls:develop .
-docker push astraonline/wacalls:develop
+# 2) revise domínio, imagem, segredos e porta de mídia
+$EDITOR deploy/swarm/.env
 
-# deploy da stack (Postgres + servidor em rede de host + proxy Traefik)
-docker stack deploy -c astracalls-stack.yml astracalls
+# 3) build + push + deploy da stack versionada no próprio repositório
+./deploy/swarm/deploy.sh
 ```
 
 Notas de produção:
-- O servidor roda em **rede de host** para a mídia WebRTC enxergar a interface real.
+- Os arquivos de deploy agora ficam versionados em `deploy/swarm/`.
+- A stack publica a porta de mídia em **UDP e TCP host mode** para o WebRTC/ICE-TCP.
 - Um serviço **socat** com labels do Traefik publica o HTTP em **HTTPS** (necessário porque
   `getUserMedia` só funciona em contexto seguro).
-- O **PostgreSQL** dedicado escuta apenas em `127.0.0.1` (não exposto à internet).
-- Defina `WACALLS_PUBLIC_IP=auto`, `WACALLS_UDP_PORT`, `WACALLS_PG_URL` e uma
-  `WACALLS_API_KEY` forte nas variáveis da stack.
+- O **PostgreSQL** dedicado fica apenas na rede interna da stack (sem porta publicada).
+- Defina uma `WACALLS_API_KEY` forte, `WACALLS_PUBLIC_IP`, `WACALLS_UDP_PORT` e a imagem/tag
+  a serem publicadas no registry configurado em `deploy/swarm/.env`.
 
 ---
 

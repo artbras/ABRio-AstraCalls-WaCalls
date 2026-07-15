@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
 
 	// Mensageria (whatsmeow)
+	mux.HandleFunc("POST /api/sessions/{sid}/presence", s.handlePresence)
 	mux.HandleFunc("POST /api/sessions/{sid}/messages/text", s.handleSendText)
 	mux.HandleFunc("POST /api/sessions/{sid}/messages/image", s.handleSendImage)
 	mux.HandleFunc("POST /api/sessions/{sid}/messages/audio", s.handleSendAudio)
@@ -219,6 +221,57 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if sess := s.sessionByID(w, r.PathValue("sid")); sess != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"rows": s.broker.historyRows(sess.id, 50)})
 	}
+}
+
+func (s *server) handlePresence(w http.ResponseWriter, r *http.Request) {
+	sess := s.pairedSession(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+
+	var body struct {
+		To    string `json:"to"`
+		Type  string `json:"type"`
+		Media string `json:"media"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(body.To) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "to required"})
+		return
+	}
+
+	jid, err := resolveRecipient(body.To)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid recipient"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	var sendErr error
+	switch body.Type {
+	case "composing":
+		media := types.ChatPresenceMediaText
+		if body.Media == "audio" {
+			media = types.ChatPresenceMediaAudio
+		}
+		sendErr = sess.sendChatPresence(ctx, jid, types.ChatPresenceComposing, media)
+	case "paused":
+		sendErr = sess.sendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be composing or paused"})
+		return
+	}
+
+	if sendErr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": sendErr.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "to": jid.String(), "type": body.Type})
 }
 
 func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Request) {

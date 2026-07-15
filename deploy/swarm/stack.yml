@@ -1,0 +1,85 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  wacalls:
+    image: ${IMAGE_REPO}:${IMAGE_TAG}
+    command: ["-addr", ":8080", "-static", "/app/client/dist"]
+    environment:
+      WACALLS_PG_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      WACALLS_PG_NAMESPACE: ${WACALLS_PG_NAMESPACE}
+      WACALLS_API_KEY: ${WACALLS_API_KEY}
+      WACALLS_PUBLIC_IP: ${WACALLS_PUBLIC_IP}
+      WACALLS_UDP_PORT: ${WACALLS_UDP_PORT}
+      WACALLS_MAX_CALLS: ${WACALLS_MAX_CALLS}
+    ports:
+      - target: ${WACALLS_UDP_PORT}
+        published: ${WACALLS_UDP_PORT}
+        protocol: udp
+        mode: host
+      - target: ${WACALLS_UDP_PORT}
+        published: ${WACALLS_UDP_PORT}
+        protocol: tcp
+        mode: host
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  socat:
+    image: alpine/socat:1.8.0.3
+    command: ["tcp-listen:8080,fork,reuseaddr", "tcp-connect:wacalls:8080"]
+    networks:
+      - internal
+      - traefik-public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=${TRAEFIK_NETWORK}
+        - traefik.http.routers.${STACK_NAME}-wacalls.rule=Host(`${PUBLIC_HOST}`)
+        - traefik.http.routers.${STACK_NAME}-wacalls.entrypoints=${TRAEFIK_ENTRYPOINT}
+        - traefik.http.routers.${STACK_NAME}-wacalls.tls=true
+        - traefik.http.routers.${STACK_NAME}-wacalls.tls.certresolver=${TRAEFIK_CERTRESOLVER}
+        - traefik.http.services.${STACK_NAME}-wacalls.loadbalancer.server.port=8080
+
+volumes:
+  postgres_data:
+
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+    name: ${TRAEFIK_NETWORK}

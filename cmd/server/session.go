@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -41,6 +42,15 @@ type Session struct {
 	auth     AuthSnapshot
 	webhook  string
 	chatwoot ChatwootConfig
+
+	typingMu    sync.Mutex
+	typingState map[string]typingState
+}
+
+type typingState struct {
+	LastStatus string
+	LastSentAt time.Time
+	ExpiresAt  time.Time
 }
 
 func (s *Session) setWebhook(url string) {
@@ -76,9 +86,70 @@ func newSession(mgr *SessionManager, id, name string, client *whatsmeow.Client) 
 		client: client,
 		auth:   AuthSnapshot{State: "connecting"},
 		reg:    newCallRegistry(),
+		typingState: map[string]typingState{},
 	}
 	client.AddEventHandler(s.handleEvent)
 	return s
+}
+
+func (s *Session) pruneTypingState(now time.Time) {
+	for jid, st := range s.typingState {
+		if !st.ExpiresAt.IsZero() && now.After(st.ExpiresAt) {
+			delete(s.typingState, jid)
+		}
+	}
+}
+
+func (s *Session) sendChatPresence(ctx context.Context, jid types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error {
+	if s.client == nil || s.client.Store.ID == nil {
+		return fmt.Errorf("session not paired")
+	}
+
+	key := jid.String()
+	now := time.Now()
+
+	s.typingMu.Lock()
+	s.pruneTypingState(now)
+	prev := s.typingState[key]
+
+	if state == types.ChatPresenceComposing {
+		if prev.LastStatus == string(types.ChatPresenceComposing) && now.Sub(prev.LastSentAt) < 4*time.Second {
+			s.typingMu.Unlock()
+			s.log.Debug("typing skipped: debounce", "jid", key)
+			return nil
+		}
+		s.typingState[key] = typingState{
+			LastStatus: string(types.ChatPresenceComposing),
+			LastSentAt: now,
+			ExpiresAt:  now.Add(20 * time.Second),
+		}
+	} else {
+		s.typingState[key] = typingState{
+			LastStatus: string(state),
+			LastSentAt: now,
+			ExpiresAt:  now,
+		}
+	}
+	s.typingMu.Unlock()
+
+	if err := s.client.SendPresence(ctx, types.PresenceAvailable); err != nil {
+		s.log.Warn("failed to mark available before chat presence", "jid", key, "err", err)
+	}
+	if err := s.client.SendChatPresence(ctx, jid, state, media); err != nil {
+		s.log.Warn("failed to send chat presence", "jid", key, "state", string(state), "media", string(media), "err", err)
+		return err
+	}
+
+	s.log.Info("chat presence sent", "jid", key, "state", string(state), "media", string(media))
+	return nil
+}
+
+func (s *Session) sendComposing(ctx context.Context, jid types.JID) error {
+	return s.sendChatPresence(ctx, jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+}
+
+func (s *Session) sendPaused(ctx context.Context, jid types.JID) error {
+	return s.sendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
 func (s *Session) createCall(callID string) *call.CallManager {
