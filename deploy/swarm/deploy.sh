@@ -24,14 +24,17 @@ required_vars=(
   TRAEFIK_NETWORK
   TRAEFIK_ENTRYPOINT
   TRAEFIK_CERTRESOLVER
+  TRAEFIK_ROUTER_NAME
   WACALLS_API_KEY
   WACALLS_PUBLIC_IP
   WACALLS_UDP_PORT
+  WACALLS_HTTP_PORT
   WACALLS_MAX_CALLS
   WACALLS_PG_NAMESPACE
   POSTGRES_DB
   POSTGRES_USER
   POSTGRES_PASSWORD
+  POSTGRES_PORT
 )
 
 for var in "${required_vars[@]}"; do
@@ -47,8 +50,14 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 if ! docker network inspect "$TRAEFIK_NETWORK" >/dev/null 2>&1; then
-  echo "Criando rede overlay externa do Traefik: $TRAEFIK_NETWORK"
-  docker network create --driver overlay --attachable "$TRAEFIK_NETWORK"
+  echo "Rede do Traefik não encontrada: $TRAEFIK_NETWORK" >&2
+  echo "Abortando para não recriar topologia diferente da VPS atual." >&2
+  exit 1
+fi
+
+if ! docker network inspect host >/dev/null 2>&1; then
+  echo "Rede host não encontrada neste Swarm." >&2
+  exit 1
 fi
 
 echo "==> Buildando imagem ${IMAGE_REPO}:${IMAGE_TAG}"

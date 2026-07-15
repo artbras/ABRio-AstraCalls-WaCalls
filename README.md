@@ -238,12 +238,16 @@ $EDITOR deploy/swarm/.env
 
 Notas de produção:
 - Os arquivos de deploy agora ficam versionados em `deploy/swarm/`.
-- A stack publica a porta de mídia em **UDP e TCP host mode** para o WebRTC/ICE-TCP.
+- Nesta VPS, a topologia real usa `wacalls` e Postgres em **host network** e um
+  `socat` separado na rede `hermesaquiles` para o Traefik publicar o HTTP.
+- A porta de mídia continua saindo do próprio processo `wacalls` em host mode
+  (`WACALLS_UDP_PORT`, hoje `50000`, em UDP e TCP para ICE-TCP).
 - Um serviço **socat** com labels do Traefik publica o HTTP em **HTTPS** (necessário porque
   `getUserMedia` só funciona em contexto seguro).
-- O **PostgreSQL** dedicado fica apenas na rede interna da stack (sem porta publicada).
-- Defina uma `WACALLS_API_KEY` forte, `WACALLS_PUBLIC_IP`, `WACALLS_UDP_PORT` e a imagem/tag
-  a serem publicadas no registry configurado em `deploy/swarm/.env`.
+- O **PostgreSQL** dedicado permanece preso a `127.0.0.1:${POSTGRES_PORT}` dentro do host,
+  preservando a estrutura atual da stack `astracall`.
+- Antes de qualquer redeploy, preencha `deploy/swarm/.env` com os valores reais da VPS
+  (domínio, tag da imagem, API key, senha do Postgres etc.).
 
 ---
 

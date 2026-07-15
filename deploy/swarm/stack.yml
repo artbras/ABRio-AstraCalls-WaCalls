@@ -1,85 +1,79 @@
-version: "3.9"
+version: "3.8"
 
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-      placement:
-        constraints:
-          - node.role == manager
-
   wacalls:
     image: ${IMAGE_REPO}:${IMAGE_TAG}
-    command: ["-addr", ":8080", "-static", "/app/client/dist"]
+    command: ["-addr", ":${WACALLS_HTTP_PORT}", "-static", "/app/client/dist", "-debug"]
     environment:
-      WACALLS_PG_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      WACALLS_PG_NAMESPACE: ${WACALLS_PG_NAMESPACE}
-      WACALLS_API_KEY: ${WACALLS_API_KEY}
-      WACALLS_PUBLIC_IP: ${WACALLS_PUBLIC_IP}
-      WACALLS_UDP_PORT: ${WACALLS_UDP_PORT}
-      WACALLS_MAX_CALLS: ${WACALLS_MAX_CALLS}
-    ports:
-      - target: ${WACALLS_UDP_PORT}
-        published: ${WACALLS_UDP_PORT}
-        protocol: udp
-        mode: host
-      - target: ${WACALLS_UDP_PORT}
-        published: ${WACALLS_UDP_PORT}
-        protocol: tcp
-        mode: host
+      - WACALLS_PUBLIC_IP=${WACALLS_PUBLIC_IP}
+      - WACALLS_UDP_PORT=${WACALLS_UDP_PORT}
+      - WACALLS_MAX_CALLS=${WACALLS_MAX_CALLS}
+      - WACALLS_API_KEY=${WACALLS_API_KEY}
+      - WACALLS_PG_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      - WACALLS_PG_NAMESPACE=${WACALLS_PG_NAMESPACE}
     networks:
-      - internal
+      - hostnet
     deploy:
+      mode: replicated
       replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
       placement:
         constraints:
           - node.role == manager
 
-  socat:
-    image: alpine/socat:1.8.0.3
-    command: ["tcp-listen:8080,fork,reuseaddr", "tcp-connect:wacalls:8080"]
+  postgres-wacalls:
+    image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - listen_addresses=127.0.0.1
+      - -c
+      - port=${POSTGRES_PORT}
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - PGPORT=${POSTGRES_PORT}
+    volumes:
+      - wacalls_pg_data:/var/lib/postgresql/data
     networks:
-      - internal
-      - traefik-public
+      - hostnet
     deploy:
+      mode: replicated
       replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  proxy:
+    image: alpine/socat
+    command: "TCP4-LISTEN:8080,fork,reuseaddr TCP4:host.docker.internal:${WACALLS_HTTP_PORT}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - hermesaquiles
+    deploy:
+      mode: replicated
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
       labels:
-        - traefik.enable=true
-        - traefik.docker.network=${TRAEFIK_NETWORK}
-        - traefik.http.routers.${STACK_NAME}-wacalls.rule=Host(`${PUBLIC_HOST}`)
-        - traefik.http.routers.${STACK_NAME}-wacalls.entrypoints=${TRAEFIK_ENTRYPOINT}
-        - traefik.http.routers.${STACK_NAME}-wacalls.tls=true
-        - traefik.http.routers.${STACK_NAME}-wacalls.tls.certresolver=${TRAEFIK_CERTRESOLVER}
-        - traefik.http.services.${STACK_NAME}-wacalls.loadbalancer.server.port=8080
+        - "traefik.enable=true"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.rule=Host(`${PUBLIC_HOST}`)"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.entrypoints=${TRAEFIK_ENTRYPOINT}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_NAME}.tls.certresolver=${TRAEFIK_CERTRESOLVER}"
+        - "traefik.http.services.${TRAEFIK_ROUTER_NAME}.loadbalancer.server.port=8080"
 
 volumes:
-  postgres_data:
+  wacalls_data:
+    name: wacalls_data
+  wacalls_pg_data:
+    name: wacalls_pg_data
 
 networks:
-  internal:
-    driver: overlay
-    attachable: true
-  traefik-public:
+  hostnet:
+    external: true
+    name: host
+  hermesaquiles:
     external: true
     name: ${TRAEFIK_NETWORK}
