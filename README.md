@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📞 AstraCalls
+# 📞 ABRio - AstraCalls - WaCalls
 
 **Chamadas de voz do WhatsApp em Go puro, direto do navegador — agora prontas para produção SaaS.**
 
@@ -20,7 +20,7 @@ Mídia VoIP nativa, multi-conta (multi-sessão), API de mensagens, webhooks, int
 
 ---
 
-> **AstraCalls** é um fork de produção do [**WaCalls**](https://github.com/JotaDev66/WaCalls)
+> **ABRio - AstraCalls - WaCalls** é um fork originário de produção do [**WaCalls**](https://github.com/JotaDev66/WaCalls)
 > (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e
 > adiciona a camada que faltava para operar como serviço: **PostgreSQL por sessão**,
 > **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** (inclusive um
