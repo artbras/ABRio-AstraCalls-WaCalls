@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   wacalls:
-    image: astraonline/wacalls:typing-presence-20260715-1608
+    image: ghcr.io/artbras/abrio-astracalls-wacalls:dev
     command: ["-addr", ":8080", "-static", "/app/client/dist", "-debug"]
     environment:
       - WACALLS_PUBLIC_IP=auto

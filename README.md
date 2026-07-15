@@ -248,6 +248,7 @@ Notas de produção:
   preservando a estrutura atual da stack `astracall`.
 - Antes de qualquer redeploy, preencha `deploy/swarm/.env` com os valores reais da VPS
   (domínio, tag da imagem, API key, senha do Postgres etc.).
+- Referência atual publicada no GHCR: `ghcr.io/artbras/abrio-astracalls-wacalls:dev`.
 
 ---
 
